@@ -31,13 +31,13 @@ QuartzCore), nu clase interne Waze.
 ### Repo Sileo (recomandat)
 Adaugă repo-ul și primești actualizările automat:
 
-**`https://abace18.github.io/Waze-patch/`**
+**`https://abace18.github.io/waze-patch/`**
 
-Pe iPhone deschide [pagina repo-ului](https://abace18.github.io/Waze-patch/) și apasă
+Pe iPhone deschide [pagina repo-ului](https://abace18.github.io/waze-patch/) și apasă
 „Adaugă în Sileo” (sau Zebra). Apoi caută **WazePatch** și instalează.
 
-> Prima dată: în GitHub, *Settings → Pages → Build and deployment → Source: GitHub Actions*,
-> apoi rulează workflow-ul **Sileo repo (Pages)** o dată (sau fă orice push pe `main`).
+> Prima dată: în GitHub, *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+> Workflow-ul **Build** publică repo-ul pe Pages la fiecare push pe `main`.
 
 ### Jailbreak (manual)
 Alternativ, descarcă `.deb`-ul din *Actions → Build → Artifacts* și instalează-l din
