@@ -1,0 +1,115 @@
+name: Inject IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "Link direct către IPA-ul Waze DECRIPTAT"
+        required: true
+        type: string
+      display_name:
+        description: "Nume aplicație (gol = neschimbat)"
+        required: false
+        type: string
+        default: ""
+      bundle_id:
+        description: "Bundle ID (gol = neschimbat; schimbă-l ca să instalezi lângă Waze original)"
+        required: false
+        type: string
+        default: ""
+      fakesign:
+        description: "Fakesign pentru TrollStore / AppSync (păstrează entitlement-ul CarPlay)"
+        required: false
+        type: boolean
+        default: true
+      remove_extensions:
+        description: "Șterge extensiile (widget-uri etc.), util la conturi Apple gratuite"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: inject-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inject:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      IPA_URL: ${{ inputs.ipa_url }}
+      DISPLAY_NAME: ${{ inputs.display_name }}
+      BUNDLE_ID: ${{ inputs.bundle_id }}
+      FAKESIGN: ${{ inputs.fakesign }}
+      REMOVE_EXTENSIONS: ${{ inputs.remove_extensions }}
+    steps:
+      - name: Mask IPA URL
+        run: echo "::add-mask::$IPA_URL"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          brew install ldid make
+          pip install --force-reinstall https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
+
+      - name: Set up Theos
+        run: |
+          git clone --recursive --depth=1 https://github.com/theos/theos.git "$HOME/theos"
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$RUNNER_TEMP/sdks"
+          git -C "$RUNNER_TEMP/sdks" sparse-checkout set iPhoneOS16.5.sdk
+          mv "$RUNNER_TEMP/sdks/iPhoneOS16.5.sdk" "$HOME/theos/sdks/"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+
+      # Rootful scheme: the dylib then links the standard CydiaSubstrate path,
+      # which cyan rewrites to the ElleKit it bundles into the app.
+      - name: Build tweak dylib
+        run: |
+          gmake THEOS_PACKAGE_SCHEME= FINALPACKAGE=1
+          DYLIB=$(find .theos/obj -name WazePatch.dylib -not -path '*/arm64*/*' | head -n1)
+          test -n "$DYLIB"
+          cp "$DYLIB" "$RUNNER_TEMP/WazePatch.dylib"
+          otool -L "$RUNNER_TEMP/WazePatch.dylib"
+
+      - name: Download IPA
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/input.ipa" "$IPA_URL"
+          unzip -tq "$RUNNER_TEMP/input.ipa" > /dev/null || { echo "::error::Fișierul descărcat nu este un IPA valid (e link direct?)"; exit 1; }
+
+      - name: Check that the IPA is decrypted
+        run: |
+          mkdir "$RUNNER_TEMP/check"
+          unzip -q "$RUNNER_TEMP/input.ipa" 'Payload/*' -d "$RUNNER_TEMP/check"
+          APP=$(find "$RUNNER_TEMP/check/Payload" -maxdepth 1 -name '*.app' | head -n1)
+          EXE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
+          echo "Waze $VERSION ($EXE)"
+          echo "WAZE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          if otool -l "$APP/$EXE" | grep -q 'cryptid 1'; then
+            echo "::error::IPA-ul este criptat (de la App Store). Ai nevoie de un IPA decriptat."
+            exit 1
+          fi
+
+      - name: Inject tweak
+        run: |
+          OUT="$RUNNER_TEMP/WazePatch-$WAZE_VERSION.ipa"
+          ARGS=(-i "$RUNNER_TEMP/input.ipa" -f "$RUNNER_TEMP/WazePatch.dylib" -u -w --overwrite)
+          [ -n "$DISPLAY_NAME" ] && ARGS+=(-n "$DISPLAY_NAME")
+          [ -n "$BUNDLE_ID" ] && ARGS+=(-b "$BUNDLE_ID")
+          [ "$REMOVE_EXTENSIONS" = "true" ] && ARGS+=(-e)
+          if [ "$FAKESIGN" = "true" ]; then
+            ARGS+=(-s)
+            OUT="${OUT%.ipa}.tipa"
+          fi
+          cyan "${ARGS[@]}" -o "$OUT"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WazePatch-${{ env.WAZE_VERSION }}
+          path: ${{ env.OUT }}
+          retention-days: 7
