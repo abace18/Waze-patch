@@ -1,0 +1,123 @@
+name: Analyze IPA
+
+# Static reverse-engineering of a decrypted Waze IPA, to locate the classes and
+# methods the tweak needs to hook. Runs on the macOS runner (it can reach the
+# file host and has the Apple toolchain). Nothing is committed to the repo: the
+# full headers are uploaded as a private artifact, and a curated map is printed
+# to the job log.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "Link direct către IPA-ul Waze DECRIPTAT"
+        required: true
+        type: string
+      class_regex:
+        description: "Regex pentru numele claselor de interes"
+        required: false
+        type: string
+        default: "(?i)ad|advert|promot|banner|sponsor|config|flag|feature|experiment|abtest|setting|speed|limit|alert|report|camera|police|theme|skin|mood|night|dark|navigation|guidance"
+      string_regex:
+        description: "Regex pentru string-uri de configurare"
+        required: false
+        type: string
+        default: "(?i)^(config|feature|flag|enable|show|hide|ad_|ads_|speed|limit|camera|alert|report|theme|mood|night|dark)[a-z0-9_.]{2,}$"
+
+concurrency:
+  group: analyze-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      IPA_URL: ${{ inputs.ipa_url }}
+      CLASS_REGEX: ${{ inputs.class_regex }}
+      STRING_REGEX: ${{ inputs.string_regex }}
+    steps:
+      - name: Mask IPA URL
+        run: echo "::add-mask::$IPA_URL"
+
+      - name: Install class-dump
+        run: brew install class-dump
+
+      - name: Download IPA
+        run: |
+          curl -fL --retry 3 -o "$RUNNER_TEMP/input.ipa" "$IPA_URL"
+          unzip -tq "$RUNNER_TEMP/input.ipa" > /dev/null || { echo "::error::Fișierul descărcat nu este un IPA valid (e link direct?)"; exit 1; }
+
+      - name: Locate binary
+        run: |
+          cd "$RUNNER_TEMP"
+          unzip -q input.ipa 'Payload/*'
+          APP=$(find Payload -maxdepth 1 -name '*.app' | head -n1)
+          EXE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
+          BIN="$APP/$EXE"
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          echo "BIN=$BIN" >> "$GITHUB_ENV"
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
+          echo "WAZE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "::group::Binary info"
+          echo "Waze $VERSION — $BIN"
+          lipo -info "$BIN" || true
+          ls -lh "$BIN"
+          if otool -l "$BIN" 2>/dev/null | grep -q 'cryptid 1'; then
+            echo "::error::Binarul este criptat. Ai nevoie de un IPA decriptat."
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: class-dump
+        run: |
+          mkdir -p "$RUNNER_TEMP/headers"
+          # One combined file is easier to search than thousands of headers.
+          class-dump -H -o "$RUNNER_TEMP/headers" "$BIN" 2>/dev/null || true
+          class-dump "$BIN" > "$RUNNER_TEMP/headers/_AllClasses.h" 2>/dev/null || true
+          COUNT=$(ls "$RUNNER_TEMP/headers" | grep -c '\.h$' || echo 0)
+          echo "class-dump produced $COUNT header files"
+
+      - name: Framework list
+        run: |
+          echo "::group::Embedded frameworks"
+          ls "$APP/Frameworks" 2>/dev/null || echo "(none)"
+          echo "::endgroup::"
+
+      # ---- Curated map printed to the log (readable from here) ----
+
+      - name: Candidate classes
+        run: |
+          cd "$RUNNER_TEMP/headers"
+          echo "===== CANDIDATE CLASSES (name — superclass) ====="
+          grep -hE '^@interface ' *.h 2>/dev/null \
+            | sed -E 's/^@interface ([A-Za-z0-9_]+).*: ([A-Za-z0-9_]+).*/\1 — \2/; s/^@interface ([A-Za-z0-9_]+).*/\1/' \
+            | sort -u \
+            | grep -E "$CLASS_REGEX" \
+            | head -n 400
+          echo "===== END CANDIDATE CLASSES ====="
+
+      - name: Candidate config strings
+        run: |
+          echo "===== CANDIDATE CONFIG STRINGS ====="
+          strings -a "$BIN" | sort -u | grep -E "$STRING_REGEX" | head -n 400
+          echo "===== END CONFIG STRINGS ====="
+
+      - name: Candidate BOOL/number methods
+        run: |
+          cd "$RUNNER_TEMP/headers"
+          echo "===== CANDIDATE TOGGLE METHODS ====="
+          grep -hiE '(BOOL|int|NSInteger).*(ad|advert|promot|banner|sponsor|speed|limit|camera|alert|report|theme|mood|night|dark)' *.h 2>/dev/null \
+            | sed -E 's/^[[:space:]]+//' | sort -u | head -n 250
+          echo "===== END TOGGLE METHODS ====="
+
+      - name: Package headers
+        run: |
+          tar -czf "$RUNNER_TEMP/WazeHeaders-$WAZE_VERSION.tar.gz" -C "$RUNNER_TEMP" headers
+          ls -lh "$RUNNER_TEMP/WazeHeaders-$WAZE_VERSION.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WazeHeaders-${{ env.WAZE_VERSION }}
+          path: ${{ runner.temp }}/WazeHeaders-${{ env.WAZE_VERSION }}.tar.gz
+          retention-days: 7
