@@ -1,54 +1,58 @@
 # WazePatch
 
-Tweak de jailbreak pentru Waze pe iOS, axat pe **CarPlay**.
+Tweak pentru Waze pe iOS, pentru **telefon și CarPlay**. Merge pe **jailbreak**
+(rootless, de exemplu Dopamine) și ca **IPA injectat** (sideload, TrollStore).
 
-- Țintă: iOS 15–16+, jailbreak rootless (testat pentru **Dopamine pe iOS 16.7**).
-- Pachet: `com.abace.wazepatch` (`iphoneos-arm64`).
+## Funcții (v0.2.0)
 
-## Funcții (v0.1.0)
+| Funcție | Telefon | CarPlay |
+|---|:-:|:-:|
+| Vitezometru GPS: km/h sau mph, 4 poziții, mărime 50–200% | ✅ (implicit oprit) | ✅ |
+| Avertizare peste prag: badge roșu, vibrație, sunet | ✅ | ✅ |
+| Buton pe hartă pentru ascunderea vitezometrului | – | ✅ |
+| Ecran mereu aprins | ✅ | – |
+| Activ în fundal | ✅ | ✅ |
+| 120 Hz pe ecranele ProMotion (experimental) | ✅ | – |
+| Mesaj „WazePatch activ” la pornire | ✅ | – |
 
-| Funcție | Detalii |
-|---|---|
-| Vitezometru pe CarPlay | Viteza GPS afișată peste harta Waze; km/h sau mph, 4 poziții, mărime 50–200%. |
-| Avertizare de viteză | Fundalul devine roșu peste pragul ales de tine. |
-| Buton pe harta CarPlay | Ascunde sau afișează vitezometrul din mașină. Se adaugă doar dacă există loc (CarPlay permite maximum 4 butoane). |
-| Ecran mereu aprins | Ecranul telefonului nu se blochează cât timp Waze este deschis. |
-| Setări live | Opțiunile sunt în **Settings → WazePatch** și se aplică fără repornirea Waze. |
+### Setări
+Setările se deschid cu o **apăsare lungă cu 3 degete** oriunde în Waze. Se aplică
+imediat (cu excepția opțiunii 120 Hz) și se păstrează în containerul aplicației,
+deci funcționează la fel pe jailbreak și pe sideload.
 
 ### De ce funcționează pe orice versiune de Waze
-Tweak-ul folosește numai API-uri publice Apple (`CPMapTemplate`, `CPWindow`,
-`CPTemplateApplicationScene`, `CLLocationManager`, `UIApplication`), nu clase interne
-Waze. Update-urile Waze nu ar trebui deci să strice funcțiile de mai sus.
+Tweak-ul folosește doar API-uri publice Apple (UIKit, CarPlay, CoreLocation,
+QuartzCore), nu clase interne Waze.
+
+## Instalare
+
+### Jailbreak
+Descarcă `.deb`-ul din *Actions → Build → Artifacts* și instalează-l din Sileo sau
+Zebra.
+
+### IPA injectat
+1. *Actions → Inject IPA → Run workflow*.
+2. Pune un link **direct** către un IPA Waze **decriptat**.
+3. Descarcă rezultatul din *Artifacts*.
+
+**Limitările re-semnării** (sideload cu certificat, de exemplu Feather):
+- Waze nu își poate salva sesiunea în Keychain, deci te delogează și Google
+  Sign-In nu funcționează.
+- Se pierde entitlement-ul CarPlay.
+
+Cu **fakesign** (TrollStore / AppSync) sau pe **jailbreak** nu există aceste
+probleme.
 
 ## Compilare
 
-Fiecare push este compilat automat de **GitHub Actions** (`.github/workflows/build.yml`).
-Fișierul `.deb` apare în tab-ul *Actions → Build → Artifacts*.
-
-Local, cu [Theos](https://theos.dev) și SDK-ul `iPhoneOS16.5.sdk` instalat în `$THEOS/sdks`:
+Fiecare push e compilat de GitHub Actions. Local, cu [Theos](https://theos.dev)
+și `iPhoneOS16.5.sdk` în `$THEOS/sdks`:
 
 ```sh
 make package FINALPACKAGE=1
 ```
 
-## Instalare
-Copiază fișierul `.deb` pe telefon și instalează-l din Sileo sau Zebra. Ca alternativă: `dpkg -i` și apoi `killall Waze`.
-
-### IPA injectat (fără jailbreak)
-1. *Actions → Inject IPA → Run workflow*.
-2. Pune un link **direct** către un IPA Waze **decriptat**. Opțional: nume, Bundle ID, fakesign, ștergerea extensiilor.
-3. Descarcă IPA-ul din *Artifacts*. Se păstrează 7 zile.
-
-Tweak-ul se injectează cu [cyan](https://github.com/asdfzxcvbn/pyzule-rw), care adaugă și ElleKit în aplicație.
-
-- **Fakesign** (implicit pornit) generează un fișier `.tipa` pentru TrollStore sau AppSync. Acesta păstrează entitlement-ul CarPlay.
-- Semnat cu un cont Apple obișnuit (Sideloadly, AltStore), IPA-ul pierde entitlement-ul CarPlay. Pe jailbreak, CarBridge rezolvă asta.
-- În varianta IPA nu există panou în Settings, deci se folosesc valorile implicite.
-
 ## Roadmap
-- [ ] Limita legală de viteză lângă vitezometru (necesită reverse engineering pe motorul Waze)
-- [ ] Ascunderea reclamelor și a pin-urilor sponsorizate
-- [ ] Filtre pentru tipurile de alerte
-- [ ] Pornirea automată a Waze la conectarea CarPlay (hook în SpringBoard)
-- [ ] Teme: OLED, culori pentru rută
-- [ ] Jurnal local al călătoriilor cu export GPX
+- [ ] Reverse engineering pe motorul de configurare Waze: reclame, distanțe de
+      alertare, limita de viteză, AMOLED, skin-uri de hartă, mood-uri și altele
+- [ ] Intrare WazePatch în meniul lateral Waze
