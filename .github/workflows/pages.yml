@@ -1,0 +1,88 @@
+name: Sileo repo (Pages)
+
+# Builds the .deb and publishes a Sileo/Zebra APT repo to GitHub Pages.
+# Repo URL for Sileo: https://abace18.github.io/Waze-patch/
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install ldid make xz
+
+      - name: Set up Theos
+        run: |
+          git clone --recursive --depth=1 https://github.com/theos/theos.git "$HOME/theos"
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$RUNNER_TEMP/sdks"
+          git -C "$RUNNER_TEMP/sdks" sparse-checkout set iPhoneOS16.5.sdk
+          mv "$RUNNER_TEMP/sdks/iPhoneOS16.5.sdk" "$HOME/theos/sdks/"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+
+      - name: Build package
+        run: gmake package FINALPACKAGE=1
+
+      - name: Build APT repo
+        run: |
+          mkdir -p repo/debs
+          cp packages/*.deb repo/debs/
+          cd repo
+          DEB=$(ls debs/*.deb | head -n1)
+          echo "Packaging $DEB"
+          {
+            grep -vE '^[[:space:]]*$' "$GITHUB_WORKSPACE/control"
+            echo "Filename: ./$DEB"
+            echo "Size: $(stat -f%z "$DEB")"
+            echo "MD5sum: $(md5 -q "$DEB")"
+            echo "SHA1: $(shasum -a 1 "$DEB" | cut -d' ' -f1)"
+            echo "SHA256: $(shasum -a 256 "$DEB" | cut -d' ' -f1)"
+            echo
+          } > Packages
+          gzip -9kf Packages
+          bzip2 -9kf Packages
+          xz -9kf Packages
+
+          cat > Release <<EOF
+          Origin: WazePatch
+          Label: WazePatch
+          Suite: stable
+          Version: 1.0
+          Codename: ios
+          Architectures: iphoneos-arm64
+          Components: main
+          Description: Îmbunătățiri pentru Waze (telefon + CarPlay)
+          EOF
+
+          cp "$GITHUB_WORKSPACE/.github/pages/index.html" index.html 2>/dev/null || true
+          echo "--- repo contents ---"
+          ls -lR
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: repo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
