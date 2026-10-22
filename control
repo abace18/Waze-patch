@@ -1,0 +1,9 @@
+Package: com.abace.wazepatch
+Name: WazePatch
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: Îmbunătățiri pentru Waze, cu accent pe CarPlay.
+Maintainer: abace18
+Author: abace18
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000), preferenceloader, firmware (>= 15.0)
