@@ -18,14 +18,16 @@ static NSHashTable<CPMapTemplate *> *gMapTemplates;
 static BOOL gAppWantsIdleTimerDisabled;
 
 static UIWindow *WPKeyWindow(void) {
+    UIWindow *fallback = nil;
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
         if (![scene isKindOfClass:UIWindowScene.class]) continue;
         if (scene.activationState != UISceneActivationStateForegroundActive) continue;
         for (UIWindow *window in ((UIWindowScene *)scene).windows) {
             if (window.isKeyWindow) return window;
+            if (!fallback && window.windowLevel == UIWindowLevelNormal) fallback = window;
         }
     }
-    return UIApplication.sharedApplication.keyWindow;
+    return fallback;
 }
 
 #pragma mark - Settings gesture
