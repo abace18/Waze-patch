@@ -118,17 +118,17 @@ jobs:
 
       - name: Dump key class methods
         run: |
-          # Print a window after each target class header: its baseMethods block
-          # lists selector names and their type encodings, enough to write hooks.
+          OBJC="$RUNNER_TEMP/out/objc.txt"
+          echo "----- raw format sample (ConfigServiceObjcWrapper) -----"
+          grep -n -m1 -A 8 'ConfigServiceObjcWrapper' "$OBJC" || echo "(not found in objc.txt)"
+          echo "----- end sample -----"
           for C in $DUMP_CLASSES; do
             echo "===== CLASS $C ====="
-            awk -v c="$C" '
-              $0 ~ ("name 0x[0-9a-f]+ " c "$") {show=1}
-              show {print; n++}
-              show && n>170 {exit}
-            ' "$RUNNER_TEMP/out/objc.txt" \
-              | grep -E 'superclass|baseMethods|^[[:space:]]*name 0x|^[[:space:]]*types 0x' \
-              | head -n 160
+            # Grep a window after the class-name occurrence; its method list
+            # (name/types pairs) follows. Tolerant to spacing.
+            grep -m1 -A 240 -E "[[:space:]]${C}\$" "$OBJC" \
+              | grep -iE 'superclass|baseMethods|properties|name 0x|types 0x' \
+              | head -n 150
             echo "===== END $C ====="
           done | tee "$RUNNER_TEMP/out/key_classes.txt"
 
