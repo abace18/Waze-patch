@@ -103,6 +103,7 @@ static BOOL WPAppSupportsBackgroundLocation(void) {
 - (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray<CLLocation *> *)locations {
     CLLocation *location = locations.lastObject;
     if (!location) return;
+    _lastLocation = location;
     _speed = location.speed;
     [self evaluateLimit];
     [self post];

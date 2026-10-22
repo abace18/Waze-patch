@@ -1,12 +1,14 @@
 #import "WPSettingsViewController.h"
 #import "WPEnvironment.h"
 #import "WPPrefs.h"
+#import "WPTripsViewController.h"
 
 typedef NS_ENUM(NSInteger, WPRowType) {
     WPRowInfo,
     WPRowSwitch,
     WPRowSegment,
     WPRowStepper,
+    WPRowLink,
 };
 
 @interface WPRow : NSObject
@@ -17,6 +19,7 @@ typedef NS_ENUM(NSInteger, WPRowType) {
 @property (nonatomic, copy) NSArray<NSString *> *segments;
 @property (nonatomic) NSInteger min, max, step;      // stepper rows
 @property (nonatomic, copy) NSString *(^format)(NSInteger value);
+@property (nonatomic, copy) void (^action)(WPSettingsViewController *vc); // link rows
 @end
 
 @implementation WPRow
@@ -65,6 +68,14 @@ static WPRow *WPStepperRow(NSString *title, NSString *key, NSInteger min, NSInte
     row.max = max;
     row.step = step;
     row.format = format;
+    return row;
+}
+
+static WPRow *WPLinkRow(NSString *title, void (^action)(WPSettingsViewController *)) {
+    WPRow *row = [WPRow new];
+    row.type = WPRowLink;
+    row.title = title;
+    row.action = action;
     return row;
 }
 
@@ -133,10 +144,20 @@ static WPSection *WPMakeSection(NSString *title, NSString *footer, NSArray<WPRow
             WPSwitchRow(@"Vibrație", WPKeyWarnVibrate),
             WPSwitchRow(@"Sunet", WPKeyWarnSound),
         ]),
+        WPMakeSection(@"Jurnal de călătorii", @"Înregistrează local traseele (consumă GPS și baterie). Totul rămâne pe telefon.", @[
+            WPSwitchRow(@"Înregistrare", WPKeyTripLog),
+            WPLinkRow(@"Călătoriile mele", ^(WPSettingsViewController *vc) {
+                [vc.navigationController pushViewController:[WPTripsViewController new] animated:YES];
+            }),
+        ]),
+        WPMakeSection(@"Dimmer OLED", @"Întunecă ecranul peste harta Waze, noaptea. Atingerile trec prin el, nemodificat.", @[
+            WPSwitchRow(@"Dimmer", WPKeyDimmer),
+            WPStepperRow(@"Intensitate", WPKeyDimmerIntensity, 0, 90, 5, percent),
+        ]),
         WPMakeSection(@"Sistem", @"„Activ în fundal” consumă mai multă baterie. „120 Hz” se aplică după repornirea Waze.", @[
             WPSwitchRow(@"Ecran mereu aprins", WPKeyKeepAwake),
             WPSwitchRow(@"Activ în fundal", WPKeyBackgroundAlive),
-            WPSwitchRow(@"120 Hz (experimental)", WPKeyHighRefresh),
+            WPSwitchRow(@"120 Hz pe ecrane ProMotion", WPKeyHighRefresh),
             WPSwitchRow(@"Mesaj la pornire", WPKeyLaunchToast),
         ]),
     ];
@@ -181,6 +202,10 @@ static WPSection *WPMakeSection(NSString *title, NSString *footer, NSArray<WPRow
         case WPRowInfo:
             cell.detailTextLabel.text = row.detail;
             break;
+        case WPRowLink:
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+            break;
         case WPRowSwitch: {
             UISwitch *toggle = [UISwitch new];
             toggle.on = [prefs boolForKey:row.key];
@@ -213,6 +238,12 @@ static WPSection *WPMakeSection(NSString *title, NSString *footer, NSArray<WPRow
         }
     }
     return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    WPRow *row = [self rowAtIndexPath:indexPath];
+    if (row.type == WPRowLink && row.action) row.action(self);
 }
 
 - (NSIndexPath *)indexPathForTag:(NSInteger)tag {

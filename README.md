@@ -12,7 +12,9 @@ Tweak pentru Waze pe iOS, pentru **telefon și CarPlay**. Merge pe **jailbreak**
 | Buton pe hartă pentru ascunderea vitezometrului | – | ✅ |
 | Ecran mereu aprins | ✅ | – |
 | Activ în fundal | ✅ | ✅ |
-| 120 Hz pe ecranele ProMotion (experimental) | ✅ | – |
+| 120 Hz pe ecranele ProMotion | ✅ | – |
+| Dimmer OLED de noapte (strat propriu, atingeri trec prin el) | ✅ | ✅ |
+| Jurnal de călătorii local, cu export GPX | ✅ | – |
 | Mesaj „WazePatch activ” la pornire | ✅ | – |
 
 ### Setări
