@@ -14,15 +14,15 @@ on:
         required: true
         type: string
       class_regex:
-        description: "Regex pentru numele claselor de interes"
+        description: "Regex (case-insensitive) pentru numele claselor de interes"
         required: false
         type: string
-        default: "(?i)ad|advert|promot|banner|sponsor|config|flag|feature|experiment|abtest|setting|speed|limit|alert|report|camera|police|theme|skin|mood|night|dark|navigation|guidance"
+        default: "ad|advert|promot|banner|sponsor|config|flag|feature|experiment|abtest|setting|speed|limit|alert|report|camera|police|theme|skin|mood|night|dark|navigation|guidance"
       string_regex:
-        description: "Regex pentru string-uri de configurare"
+        description: "Regex (case-insensitive) pentru string-uri de configurare"
         required: false
         type: string
-        default: "(?i)^(config|feature|flag|enable|show|hide|ad_|ads_|speed|limit|camera|alert|report|theme|mood|night|dark)[a-z0-9_.]{2,}$"
+        default: "^(config|feature|flag|enable|show|hide|ad_|ads_|speed|limit|camera|alert|report|theme|mood|night|dark)[a-z0-9_.]{2,}$"
 
 concurrency:
   group: analyze-${{ github.ref }}
@@ -40,8 +40,8 @@ jobs:
       - name: Mask IPA URL
         run: echo "::add-mask::$IPA_URL"
 
-      - name: Install class-dump
-        run: brew install class-dump
+      - name: Install ipsw
+        run: brew install blacktop/tap/ipsw
 
       - name: Download IPA
         run: |
@@ -59,6 +59,8 @@ jobs:
           echo "BIN=$BIN" >> "$GITHUB_ENV"
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
           echo "WAZE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          ARCH=$(lipo -archs "$BIN" 2>/dev/null | tr ' ' '\n' | tail -n1)
+          echo "ARCH=${ARCH:-arm64}" >> "$GITHUB_ENV"
           echo "::group::Binary info"
           echo "Waze $VERSION — $BIN"
           lipo -info "$BIN" || true
@@ -71,12 +73,13 @@ jobs:
 
       - name: class-dump
         run: |
-          mkdir -p "$RUNNER_TEMP/headers"
-          # One combined file is easier to search than thousands of headers.
-          class-dump -H -o "$RUNNER_TEMP/headers" "$BIN" 2>/dev/null || true
-          class-dump "$BIN" > "$RUNNER_TEMP/headers/_AllClasses.h" 2>/dev/null || true
-          COUNT=$(ls "$RUNNER_TEMP/headers" | grep -c '\.h$' || echo 0)
-          echo "class-dump produced $COUNT header files"
+          mkdir -p "$RUNNER_TEMP/out"
+          echo "Using arch: $ARCH"
+          ipsw class-dump --arch "$ARCH" --headers "$BIN" > "$RUNNER_TEMP/out/AllClasses.h" 2>"$RUNNER_TEMP/out/classdump.err" \
+            || ipsw class-dump "$BIN" > "$RUNNER_TEMP/out/AllClasses.h" 2>>"$RUNNER_TEMP/out/classdump.err" \
+            || true
+          echo "AllClasses.h: $(wc -l < "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null || echo 0) lines"
+          head -n 20 "$RUNNER_TEMP/out/classdump.err" || true
 
       - name: Framework list
         run: |
@@ -88,32 +91,31 @@ jobs:
 
       - name: Candidate classes
         run: |
-          cd "$RUNNER_TEMP/headers"
-          echo "===== CANDIDATE CLASSES (name — superclass) ====="
-          grep -hE '^@interface ' *.h 2>/dev/null \
-            | sed -E 's/^@interface ([A-Za-z0-9_]+).*: ([A-Za-z0-9_]+).*/\1 — \2/; s/^@interface ([A-Za-z0-9_]+).*/\1/' \
+          echo "===== CANDIDATE CLASSES (name : superclass) ====="
+          grep -hE '^@interface ' "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null \
+            | sed -E 's/^@interface ([A-Za-z0-9_]+)[^:]*: ([A-Za-z0-9_]+).*/\1 : \2/; s/^@interface ([A-Za-z0-9_]+).*/\1/' \
             | sort -u \
-            | grep -E "$CLASS_REGEX" \
+            | grep -iE "$CLASS_REGEX" \
             | head -n 400
           echo "===== END CANDIDATE CLASSES ====="
 
       - name: Candidate config strings
         run: |
           echo "===== CANDIDATE CONFIG STRINGS ====="
-          strings -a "$BIN" | sort -u | grep -E "$STRING_REGEX" | head -n 400
+          strings -a "$BIN" | sort -u | grep -iE "$STRING_REGEX" | head -n 400
           echo "===== END CONFIG STRINGS ====="
 
-      - name: Candidate BOOL/number methods
+      - name: Candidate toggle methods
         run: |
-          cd "$RUNNER_TEMP/headers"
           echo "===== CANDIDATE TOGGLE METHODS ====="
-          grep -hiE '(BOOL|int|NSInteger).*(ad|advert|promot|banner|sponsor|speed|limit|camera|alert|report|theme|mood|night|dark)' *.h 2>/dev/null \
+          grep -hiE '(BOOL|int|NSInteger).*(ad|advert|promot|banner|sponsor|speed|limit|camera|alert|report|theme|mood|night|dark)' "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null \
             | sed -E 's/^[[:space:]]+//' | sort -u | head -n 250
           echo "===== END TOGGLE METHODS ====="
 
       - name: Package headers
         run: |
-          tar -czf "$RUNNER_TEMP/WazeHeaders-$WAZE_VERSION.tar.gz" -C "$RUNNER_TEMP" headers
+          strings -a "$BIN" | sort -u > "$RUNNER_TEMP/out/strings.txt"
+          tar -czf "$RUNNER_TEMP/WazeHeaders-$WAZE_VERSION.tar.gz" -C "$RUNNER_TEMP" out
           ls -lh "$RUNNER_TEMP/WazeHeaders-$WAZE_VERSION.tar.gz"
 
       - uses: actions/upload-artifact@v4
