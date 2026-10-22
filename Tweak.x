@@ -2,6 +2,7 @@
 #import <CarPlay/CarPlay.h>
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
+#import "WPDimmer.h"
 #import "WPEnvironment.h"
 #import "WPOverlay.h"
 #import "WPPrefs.h"
@@ -102,6 +103,8 @@ static BOOL WPIsPhoneMainWindow(UIWindow *window) {
 
 static void WPPhoneWindowBecameKey(UIWindow *window) {
     WPInstallSettingsGesture(window);
+    // Dimmer first (lower), speed badge after (stays on top).
+    [WPDimmer.shared setPhoneWindow:window];
     [WPOverlay.shared setPhoneWindow:window];
 
     static BOOL toastShown;
@@ -117,7 +120,10 @@ static void WPPhoneWindowBecameKey(UIWindow *window) {
 static void WPAttachToCarPlayScene(UIScene *scene) {
     if (![scene isKindOfClass:CPTemplateApplicationScene.class]) return;
     UIWindow *window = ((CPTemplateApplicationScene *)scene).carWindow;
-    if (window) [WPOverlay.shared setCarWindow:window];
+    if (window) {
+        [WPDimmer.shared setCarWindow:window];
+        [WPOverlay.shared setCarWindow:window];
+    }
 }
 
 #pragma mark - CarPlay map button
@@ -176,7 +182,12 @@ static void WPApplyBackgroundAlive(void) {
 
 - (void)layoutSubviews {
     %orig;
-    if (WPIsMainCarPlayWindow(self)) [WPOverlay.shared setCarWindow:self];
+    if (WPIsMainCarPlayWindow(self)) {
+        [WPDimmer.shared setCarWindow:self];
+        [WPOverlay.shared setCarWindow:self];
+    }
+    // Dimmer first (lower), speed badge last (stays on top).
+    [WPDimmer.shared windowDidLayout:self];
     [WPOverlay.shared windowDidLayout:self];
 }
 
@@ -258,7 +269,10 @@ static void WPApplyBackgroundAlive(void) {
             WPAttachToCarPlayScene(note.object);
         }];
         [center addObserverForName:UISceneDidDisconnectNotification object:nil queue:main usingBlock:^(NSNotification *note) {
-            if ([note.object isKindOfClass:CPTemplateApplicationScene.class]) [WPOverlay.shared carWindowGone];
+            if ([note.object isKindOfClass:CPTemplateApplicationScene.class]) {
+                [WPOverlay.shared carWindowGone];
+                [WPDimmer.shared carWindowGone];
+            }
         }];
         [center addObserverForName:UIApplicationDidFinishLaunchingNotification object:nil queue:main usingBlock:^(NSNotification *note) {
             WPApplyBackgroundAlive();

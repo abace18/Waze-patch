@@ -133,10 +133,14 @@ static WPSection *WPMakeSection(NSString *title, NSString *footer, NSArray<WPRow
             WPSwitchRow(@"Vibrație", WPKeyWarnVibrate),
             WPSwitchRow(@"Sunet", WPKeyWarnSound),
         ]),
+        WPMakeSection(@"Dimmer OLED", @"Întunecă ecranul peste harta Waze, noaptea. Atingerile trec prin el, nemodificat.", @[
+            WPSwitchRow(@"Dimmer", WPKeyDimmer),
+            WPStepperRow(@"Intensitate", WPKeyDimmerIntensity, 0, 90, 5, percent),
+        ]),
         WPMakeSection(@"Sistem", @"„Activ în fundal” consumă mai multă baterie. „120 Hz” se aplică după repornirea Waze.", @[
             WPSwitchRow(@"Ecran mereu aprins", WPKeyKeepAwake),
             WPSwitchRow(@"Activ în fundal", WPKeyBackgroundAlive),
-            WPSwitchRow(@"120 Hz (experimental)", WPKeyHighRefresh),
+            WPSwitchRow(@"120 Hz pe ecrane ProMotion", WPKeyHighRefresh),
             WPSwitchRow(@"Mesaj la pornire", WPKeyLaunchToast),
         ]),
     ];
