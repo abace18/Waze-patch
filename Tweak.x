@@ -17,6 +17,19 @@ static char kWPGestureKey;
 static NSHashTable<CPMapTemplate *> *gMapTemplates;
 static BOOL gAppWantsIdleTimerDisabled;
 
+static UIWindow *WPKeyWindow(void) {
+    UIWindow *fallback = nil;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class]) continue;
+        if (scene.activationState != UISceneActivationStateForegroundActive) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if (window.isKeyWindow) return window;
+            if (!fallback && window.windowLevel == UIWindowLevelNormal) fallback = window;
+        }
+    }
+    return fallback;
+}
+
 #pragma mark - Settings gesture
 
 @interface WPGestureHandler : NSObject <UIGestureRecognizerDelegate>
@@ -35,12 +48,22 @@ static BOOL gAppWantsIdleTimerDisabled;
 
 - (void)handle:(UILongPressGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) {
-        [WPSettingsViewController presentInWindow:gesture.view.window];
+        NSLog(@"[WazePatch] settings gesture fired");
+        [WPSettingsViewController presentInWindow:(gesture.view.window ?: WPKeyWindow())];
     }
 }
 
+// Recognize alongside Waze's own map gestures, and never let them require us to fail.
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
     return YES;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldBeRequiredToFailByGestureRecognizer:(UIGestureRecognizer *)other {
+    return NO;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldRequireFailureOfGestureRecognizer:(UIGestureRecognizer *)other {
+    return NO;
 }
 
 @end
@@ -50,11 +73,16 @@ static void WPInstallSettingsGesture(UIWindow *window) {
     UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:WPGestureHandler.shared
                                                                                           action:@selector(handle:)];
     gesture.numberOfTouchesRequired = 3;
-    gesture.minimumPressDuration = 0.8;
+    gesture.minimumPressDuration = 0.5;
+    // The map drifts under three fingers; don't cancel the press over that.
+    gesture.allowableMovement = 200;
     gesture.cancelsTouchesInView = NO;
+    gesture.delaysTouchesBegan = NO;
+    gesture.delaysTouchesEnded = NO;
     gesture.delegate = WPGestureHandler.shared;
     [window addGestureRecognizer:gesture];
     objc_setAssociatedObject(window, &kWPGestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSLog(@"[WazePatch] settings gesture installed on %@", window);
 }
 
 #pragma mark - Windows
@@ -134,6 +162,16 @@ static void WPApplyBackgroundAlive(void) {
 - (void)becomeKeyWindow {
     %orig;
     if (WPIsPhoneMainWindow(self)) WPPhoneWindowBecameKey(self);
+}
+
+// Fallback trigger: shake the phone to open the settings, in case the
+// 3-finger press is swallowed by Waze's map gestures.
+- (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
+    %orig;
+    if (motion == UIEventSubtypeMotionShake && WPIsPhoneMainWindow(self)) {
+        NSLog(@"[WazePatch] shake -> settings");
+        [WPSettingsViewController presentInWindow:self];
+    }
 }
 
 - (void)layoutSubviews {
