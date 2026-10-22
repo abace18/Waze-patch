@@ -1,5 +1,6 @@
 #import "WPSettingsViewController.h"
 #import "WPEnvironment.h"
+#import "WPLaneGuidance.h"
 #import "WPPrefs.h"
 #import "WPTripsViewController.h"
 
@@ -129,6 +130,7 @@ static WPSection *WPMakeSection(NSString *title, NSString *footer, NSArray<WPRow
             WPInfoRow(@"WazePatch", WP_VERSION),
             WPInfoRow(@"Waze", WPWazeVersion()),
             WPInfoRow(@"Instalare", WPInstallModeName(WPCurrentInstallMode())),
+            WPInfoRow(@"Lane guidance", [WPLaneGuidance statusSummary]),
         ]),
         WPMakeSection(@"Vitezometru", nil, @[
             WPSwitchRow(@"Pe telefon", WPKeyPhoneSpeedometer),
