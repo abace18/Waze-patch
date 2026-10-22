@@ -5,6 +5,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -34,3 +39,46 @@ jobs:
         with:
           name: WazePatch
           path: packages/*.deb
+
+      # ---- Sileo/Zebra APT repo, published to GitHub Pages (main only) ----
+      - name: Build APT repo
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p repo/debs
+          cp packages/*.deb repo/debs/
+          cd repo
+          DEB=$(ls debs/*.deb | head -n1)
+          echo "Packaging $DEB"
+          {
+            grep -vE '^[[:space:]]*$' "$GITHUB_WORKSPACE/control"
+            echo "Filename: ./$DEB"
+            echo "Size: $(stat -f%z "$DEB")"
+            echo "MD5sum: $(md5 -q "$DEB")"
+            echo "SHA1: $(shasum -a 1 "$DEB" | cut -d' ' -f1)"
+            echo "SHA256: $(shasum -a 256 "$DEB" | cut -d' ' -f1)"
+            echo
+          } > Packages
+          gzip -9kf Packages
+          bzip2 -9kf Packages
+          xz -9kf Packages
+          printf 'Origin: WazePatch\nLabel: WazePatch\nSuite: stable\nVersion: 1.0\nCodename: ios\nArchitectures: iphoneos-arm64\nComponents: main\nDescription: Imbunatatiri pentru Waze (telefon + CarPlay)\n' > Release
+          cp "$GITHUB_WORKSPACE/.github/pages/index.html" index.html 2>/dev/null || true
+          echo "--- repo contents ---"
+          ls -lR
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: repo
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
