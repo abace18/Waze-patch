@@ -34,6 +34,17 @@ make package FINALPACKAGE=1
 ## Instalare
 Copiază fișierul `.deb` pe telefon și instalează-l din Sileo sau Zebra. Ca alternativă: `dpkg -i` și apoi `killall Waze`.
 
+### IPA injectat (fără jailbreak)
+1. *Actions → Inject IPA → Run workflow*.
+2. Pune un link **direct** către un IPA Waze **decriptat**. Opțional: nume, Bundle ID, fakesign, ștergerea extensiilor.
+3. Descarcă IPA-ul din *Artifacts*. Se păstrează 7 zile.
+
+Tweak-ul se injectează cu [cyan](https://github.com/asdfzxcvbn/pyzule-rw), care adaugă și ElleKit în aplicație.
+
+- **Fakesign** (implicit pornit) generează un fișier `.tipa` pentru TrollStore sau AppSync. Acesta păstrează entitlement-ul CarPlay.
+- Semnat cu un cont Apple obișnuit (Sideloadly, AltStore), IPA-ul pierde entitlement-ul CarPlay. Pe jailbreak, CarBridge rezolvă asta.
+- În varianta IPA nu există panou în Settings, deci se folosesc valorile implicite.
+
 ## Roadmap
 - [ ] Limita legală de viteză lângă vitezometru (necesită reverse engineering pe motorul Waze)
 - [ ] Ascunderea reclamelor și a pin-urilor sponsorizate

@@ -97,7 +97,9 @@ static void WPPrefsDarwinCallback(CFNotificationCenterRef center, void *observer
 
 %ctor {
     @autoreleasepool {
-        if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.waze.iphone"]) return;
+        // The filter plist limits loading to Waze on jailbreak; in an injected IPA the
+        // bundle id may be changed, so only skip app extensions (widgets etc.).
+        if ([NSBundle.mainBundle.bundlePath hasSuffix:@".appex"]) return;
 
         gMapTemplates = [NSHashTable weakObjectsHashTable];
         [WPPrefs shared];
