@@ -50,7 +50,7 @@ jobs:
         run: |
           cd "$RUNNER_TEMP"
           unzip -q input.ipa 'Payload/*'
-          APP=$(find Payload -maxdepth 1 -name '*.app' | head -n1)
+          APP=$(find "$RUNNER_TEMP/Payload" -maxdepth 1 -name '*.app' | head -n1)
           test -n "$APP" || { echo "::error::Nu am găsit un .app în Payload"; exit 1; }
           EXE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
           BIN="$APP/$EXE"
