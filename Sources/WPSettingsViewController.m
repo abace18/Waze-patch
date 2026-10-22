@@ -114,7 +114,7 @@ static WPSection *WPMakeSection(NSString *title, NSString *footer, NSArray<WPRow
     };
 
     _sections = @[
-        WPMakeSection(@"Status", @"Setările se deschid oricând cu o apăsare lungă cu 3 degete pe ecran.", @[
+        WPMakeSection(@"Status", @"Setările se deschid cu o apăsare lungă cu 3 degete pe ecran sau prin scuturarea telefonului.", @[
             WPInfoRow(@"WazePatch", WP_VERSION),
             WPInfoRow(@"Waze", WPWazeVersion()),
             WPInfoRow(@"Instalare", WPInstallModeName(WPCurrentInstallMode())),
