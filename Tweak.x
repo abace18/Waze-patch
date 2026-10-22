@@ -9,6 +9,7 @@
 #import "WPSettingsViewController.h"
 #import "WPSpeed.h"
 #import "WPToast.h"
+#import "WPTripLog.h"
 
 // Everything here hooks public Apple APIs (UIKit, CarPlay, QuartzCore), so it
 // does not depend on Waze's private classes and survives Waze updates.
@@ -276,6 +277,7 @@ static void WPApplyBackgroundAlive(void) {
         }];
         [center addObserverForName:UIApplicationDidFinishLaunchingNotification object:nil queue:main usingBlock:^(NSNotification *note) {
             WPApplyBackgroundAlive();
+            [WPTripLog.shared applyPrefs];
         }];
         [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:main usingBlock:^(NSNotification *note) {
             WPApplyKeepAwake();
@@ -283,6 +285,7 @@ static void WPApplyBackgroundAlive(void) {
         [center addObserverForName:WPPrefsChangedNotification object:nil queue:main usingBlock:^(NSNotification *note) {
             WPApplyKeepAwake();
             WPApplyBackgroundAlive();
+            [WPTripLog.shared applyPrefs];
             WPRefreshMapTemplates();
         }];
 

@@ -31,6 +31,7 @@ FOUNDATION_EXPORT NSString *const WPKeyHighRefresh;
 FOUNDATION_EXPORT NSString *const WPKeyLaunchToast;
 FOUNDATION_EXPORT NSString *const WPKeyDimmer;
 FOUNDATION_EXPORT NSString *const WPKeyDimmerIntensity;
+FOUNDATION_EXPORT NSString *const WPKeyTripLog;
 
 // Settings live in the app's own container, so they work the same on
 // jailbreak and in an injected IPA.
@@ -57,4 +58,5 @@ FOUNDATION_EXPORT NSString *const WPKeyDimmerIntensity;
 @property (nonatomic, readonly) BOOL launchToast;
 @property (nonatomic, readonly) BOOL dimmer;
 @property (nonatomic, readonly) NSInteger dimmerIntensity; // percent, 0..90
+@property (nonatomic, readonly) BOOL tripLog;
 @end

@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <CoreLocation/CoreLocation.h>
 
 // Posted on the main thread after every location update.
 FOUNDATION_EXPORT NSString *const WPSpeedDidChangeNotification;
@@ -12,6 +13,8 @@ FOUNDATION_EXPORT NSString *const WPSpeedDidChangeNotification;
 @property (nonatomic, readonly) NSInteger displaySpeed;
 // YES while above the warning threshold.
 @property (nonatomic, readonly) BOOL overLimit;
+// Most recent fix, nil when unknown. Used by the trip log.
+@property (nonatomic, readonly, nullable) CLLocation *lastLocation;
 
 - (void)addConsumer:(NSString *)name;
 - (void)removeConsumer:(NSString *)name;

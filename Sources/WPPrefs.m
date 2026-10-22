@@ -18,6 +18,7 @@ NSString *const WPKeyHighRefresh = @"highRefresh";
 NSString *const WPKeyLaunchToast = @"launchToast";
 NSString *const WPKeyDimmer = @"dimmer";
 NSString *const WPKeyDimmerIntensity = @"dimmerIntensity";
+NSString *const WPKeyTripLog = @"tripLog";
 
 @implementation WPPrefs {
     NSUserDefaults *_defaults;
@@ -52,6 +53,7 @@ NSString *const WPKeyDimmerIntensity = @"dimmerIntensity";
             WPKeyLaunchToast: @YES,
             WPKeyDimmer: @NO,
             WPKeyDimmerIntensity: @40,
+            WPKeyTripLog: @NO,
         }];
     }
     return self;
@@ -86,5 +88,6 @@ NSString *const WPKeyDimmerIntensity = @"dimmerIntensity";
 - (BOOL)launchToast { return [self boolForKey:WPKeyLaunchToast]; }
 - (BOOL)dimmer { return [self boolForKey:WPKeyDimmer]; }
 - (NSInteger)dimmerIntensity { return MAX(0, MIN(90, [self integerForKey:WPKeyDimmerIntensity])); }
+- (BOOL)tripLog { return [self boolForKey:WPKeyTripLog]; }
 
 @end
