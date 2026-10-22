@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #import "WPDimmer.h"
 #import "WPEnvironment.h"
+#import "WPLaneGuidance.h"
 #import "WPOverlay.h"
 #import "WPPrefs.h"
 #import "WPSettingsViewController.h"
@@ -278,6 +279,7 @@ static void WPApplyBackgroundAlive(void) {
         [center addObserverForName:UIApplicationDidFinishLaunchingNotification object:nil queue:main usingBlock:^(NSNotification *note) {
             WPApplyBackgroundAlive();
             [WPTripLog.shared applyPrefs];
+            [WPLaneGuidance installIfEnabled];
         }];
         [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:main usingBlock:^(NSNotification *note) {
             WPApplyKeepAwake();

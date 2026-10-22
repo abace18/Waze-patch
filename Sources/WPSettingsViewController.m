@@ -144,6 +144,9 @@ static WPSection *WPMakeSection(NSString *title, NSString *footer, NSArray<WPRow
             WPSwitchRow(@"Vibrație", WPKeyWarnVibrate),
             WPSwitchRow(@"Sunet", WPKeyWarnSound),
         ]),
+        WPMakeSection(@"Navigație", @"Experimental: forțează flag-urile interne de lane guidance ale Waze. Se aplică după repornirea Waze. Poate să nu apară dacă Waze nu are date de benzi pe drumul respectiv.", @[
+            WPSwitchRow(@"Lane guidance (forțat)", WPKeyLaneGuidance),
+        ]),
         WPMakeSection(@"Jurnal de călătorii", @"Înregistrează local traseele (consumă GPS și baterie). Totul rămâne pe telefon.", @[
             WPSwitchRow(@"Înregistrare", WPKeyTripLog),
             WPLinkRow(@"Călătoriile mele", ^(WPSettingsViewController *vc) {
