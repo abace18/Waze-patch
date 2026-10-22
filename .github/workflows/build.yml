@@ -13,25 +13,19 @@ jobs:
   build:
     runs-on: macos-14
     timeout-minutes: 30
-    env:
-      THEOS: ${{ github.workspace }}/../theos
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: brew install ldid make
+        run: brew install ldid make xz
 
-      - name: Clone Theos
-        timeout-minutes: 5
-        run: git clone --recursive --depth=1 https://github.com/theos/theos.git "$THEOS"
-
-      - name: Download iOS 16.5 SDK
-        timeout-minutes: 10
+      - name: Set up Theos
         run: |
-          curl -fsSL https://github.com/theos/sdks/archive/refs/heads/master.tar.gz \
-            | tar -xz -C "$RUNNER_TEMP" "sdks-master/iPhoneOS16.5.sdk"
-          mv "$RUNNER_TEMP/sdks-master/iPhoneOS16.5.sdk" "$THEOS/sdks/"
-          ls "$THEOS/sdks"
+          git clone --recursive --depth=1 https://github.com/theos/theos.git "$HOME/theos"
+          git clone --depth=1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$RUNNER_TEMP/sdks"
+          git -C "$RUNNER_TEMP/sdks" sparse-checkout set iPhoneOS16.5.sdk
+          mv "$RUNNER_TEMP/sdks/iPhoneOS16.5.sdk" "$HOME/theos/sdks/"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
       - name: Build package
         run: gmake package FINALPACKAGE=1
