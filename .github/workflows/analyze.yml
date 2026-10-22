@@ -1,10 +1,11 @@
 name: Analyze IPA
 
-# Static reverse-engineering of a decrypted Waze IPA, to locate the classes and
-# methods the tweak needs to hook. Runs on the macOS runner (it can reach the
-# file host and has the Apple toolchain). Nothing is committed to the repo: the
-# full headers are uploaded as a private artifact, and a curated map is printed
-# to the job log.
+# Static reverse-engineering of a decrypted Waze IPA, to locate the classes,
+# selectors and config keys the tweak needs. Runs on the macOS runner (it can
+# reach the file host and ships the Apple toolchain). Installs NOTHING — only
+# nm / otool / strings / unzip, which are always present — so it can't fail on
+# a missing tool. Nothing is committed to the repo: a compact dump is uploaded
+# as a private artifact, and a curated map is printed to the job log.
 
 on:
   workflow_dispatch:
@@ -14,7 +15,7 @@ on:
         required: true
         type: string
       class_regex:
-        description: "Regex (case-insensitive) pentru numele claselor de interes"
+        description: "Regex (case-insensitive) pentru clase/selectori de interes"
         required: false
         type: string
         default: "ad|advert|promot|banner|sponsor|config|flag|feature|experiment|abtest|setting|speed|limit|alert|report|camera|police|theme|skin|mood|night|dark|navigation|guidance"
@@ -40,44 +41,24 @@ jobs:
       - name: Mask IPA URL
         run: echo "::add-mask::$IPA_URL"
 
-      - name: Install ipsw
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Install straight from the GitHub release to avoid Homebrew tap trust issues.
-          URL=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
-              https://api.github.com/repos/blacktop/ipsw/releases/latest \
-            | python3 -c "import sys,json
-a=json.load(sys.stdin)['assets']
-def pick(p): return next((x['browser_download_url'] for x in a if p(x['name'])),'')
-print(pick(lambda n:'macOS' in n and 'universal' in n and n.endswith('.tar.gz')) or pick(lambda n:'macOS' in n and n.endswith('.tar.gz')))")
-          echo "Downloading ipsw from $URL"
-          test -n "$URL"
-          curl -fL "$URL" -o "$RUNNER_TEMP/ipsw.tar.gz"
-          mkdir -p "$RUNNER_TEMP/ipswbin"
-          tar -xzf "$RUNNER_TEMP/ipsw.tar.gz" -C "$RUNNER_TEMP/ipswbin"
-          IPSW=$(find "$RUNNER_TEMP/ipswbin" -name ipsw -type f | head -n1)
-          echo "IPSW=$IPSW" >> "$GITHUB_ENV"
-          "$IPSW" version || true
-
       - name: Download IPA
         run: |
           curl -fL --retry 3 -o "$RUNNER_TEMP/input.ipa" "$IPA_URL"
-          unzip -tq "$RUNNER_TEMP/input.ipa" > /dev/null || { echo "::error::Fișierul descărcat nu este un IPA valid (e link direct?)"; exit 1; }
+          unzip -tq "$RUNNER_TEMP/input.ipa" > /dev/null || { echo "::error::Fișierul descărcat nu este un IPA valid (e link direct? a expirat?)"; exit 1; }
 
       - name: Locate binary
         run: |
           cd "$RUNNER_TEMP"
           unzip -q input.ipa 'Payload/*'
           APP=$(find Payload -maxdepth 1 -name '*.app' | head -n1)
+          test -n "$APP" || { echo "::error::Nu am găsit un .app în Payload"; exit 1; }
           EXE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
           BIN="$APP/$EXE"
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
           echo "APP=$APP" >> "$GITHUB_ENV"
           echo "BIN=$BIN" >> "$GITHUB_ENV"
-          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")
           echo "WAZE_VERSION=$VERSION" >> "$GITHUB_ENV"
-          ARCH=$(lipo -archs "$BIN" 2>/dev/null | tr ' ' '\n' | tail -n1)
-          echo "ARCH=${ARCH:-arm64}" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/out"
           echo "::group::Binary info"
           echo "Waze $VERSION — $BIN"
           lipo -info "$BIN" || true
@@ -88,25 +69,17 @@ print(pick(lambda n:'macOS' in n and 'universal' in n and n.endswith('.tar.gz'))
           fi
           echo "::endgroup::"
 
-      - name: class-dump
+      - name: Extract metadata
         run: |
-          mkdir -p "$RUNNER_TEMP/out"
-          echo "Using arch: $ARCH"
-          "$IPSW" class-dump --arch "$ARCH" "$BIN" > "$RUNNER_TEMP/out/AllClasses.h" 2>"$RUNNER_TEMP/out/classdump.err" \
-            || "$IPSW" class-dump "$BIN" > "$RUNNER_TEMP/out/AllClasses.h" 2>>"$RUNNER_TEMP/out/classdump.err" \
-            || true
-          LINES=$(wc -l < "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null || echo 0)
-          echo "AllClasses.h: $LINES lines"
-          head -n 20 "$RUNNER_TEMP/out/classdump.err" || true
-          # Fallback: raw Objective-C metadata via otool (always available, no install).
-          if [ "$LINES" -lt 50 ]; then
-            echo "class-dump thin; falling back to otool -oV"
-            otool -oV "$BIN" > "$RUNNER_TEMP/out/objc.txt" 2>/dev/null || true
-            echo "objc.txt: $(wc -l < "$RUNNER_TEMP/out/objc.txt" 2>/dev/null || echo 0) lines"
-          fi
-
-      - name: Framework list
-        run: |
+          cd "$RUNNER_TEMP/out"
+          # Obj-C class names (reliable, from symbols).
+          nm "$BIN" 2>/dev/null | grep -oE '_OBJC_CLASS_\$_[A-Za-z0-9_]+' | sed 's/_OBJC_CLASS_\$_//' | sort -u > classes.txt
+          # Selector (method) names.
+          otool -v -s __TEXT __objc_methname "$BIN" 2>/dev/null \
+            | awk 'NF>=2 && $1 ~ /^[0-9a-f]+$/ {print $2}' | sort -u > selectors.txt
+          # All readable strings.
+          strings -a "$BIN" | sort -u > strings.txt
+          echo "classes: $(wc -l < classes.txt), selectors: $(wc -l < selectors.txt), strings: $(wc -l < strings.txt)"
           echo "::group::Embedded frameworks"
           ls "$APP/Frameworks" 2>/dev/null || echo "(none)"
           echo "::endgroup::"
@@ -115,39 +88,27 @@ print(pick(lambda n:'macOS' in n and 'universal' in n and n.endswith('.tar.gz'))
 
       - name: Candidate classes
         run: |
-          echo "===== CANDIDATE CLASSES (name[ : superclass]) ====="
-          {
-            # From class-dump, with superclass when available.
-            grep -hE '^@interface ' "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null \
-              | sed -E 's/^@interface ([A-Za-z0-9_]+)[^:]*: ([A-Za-z0-9_]+).*/\1 : \2/; s/^@interface ([A-Za-z0-9_]+).*/\1/'
-            # Always-available fallback: Obj-C class symbols.
-            nm "$BIN" 2>/dev/null | grep -oE '_OBJC_CLASS_\$_[A-Za-z0-9_]+' | sed 's/_OBJC_CLASS_\$_//'
-          } | sort -u | grep -iE "$CLASS_REGEX" | head -n 400
+          echo "===== CANDIDATE CLASSES ====="
+          grep -iE "$CLASS_REGEX" "$RUNNER_TEMP/out/classes.txt" | head -n 400
           echo "===== END CANDIDATE CLASSES ====="
 
       - name: Candidate selectors
         run: |
-          echo "===== CANDIDATE SELECTORS (method names) ====="
-          # Method-name strings live in their own section; always available.
-          otool -v -s __TEXT __objc_methname "$BIN" 2>/dev/null \
-            | awk 'NF>=2 && $1 ~ /^[0-9a-f]+$/ {print $2}' \
-            | sort -u | grep -iE "$CLASS_REGEX" | head -n 400
+          echo "===== CANDIDATE SELECTORS ====="
+          grep -iE "$CLASS_REGEX" "$RUNNER_TEMP/out/selectors.txt" | head -n 400
           echo "===== END SELECTORS ====="
 
       - name: Candidate config strings
         run: |
           echo "===== CANDIDATE CONFIG STRINGS ====="
-          strings -a "$BIN" | sort -u | grep -iE "$STRING_REGEX" | head -n 400
+          grep -iE "$STRING_REGEX" "$RUNNER_TEMP/out/strings.txt" | head -n 400
           echo "===== END CONFIG STRINGS ====="
 
-      - name: Package headers
-        run: |
-          strings -a "$BIN" | sort -u > "$RUNNER_TEMP/out/strings.txt"
-          tar -czf "$RUNNER_TEMP/WazeHeaders-$WAZE_VERSION.tar.gz" -C "$RUNNER_TEMP" out
-          ls -lh "$RUNNER_TEMP/WazeHeaders-$WAZE_VERSION.tar.gz"
+      - name: Package dump
+        run: tar -czf "$RUNNER_TEMP/WazeDump-$WAZE_VERSION.tar.gz" -C "$RUNNER_TEMP" out
 
       - uses: actions/upload-artifact@v4
         with:
-          name: WazeHeaders-${{ env.WAZE_VERSION }}
-          path: ${{ runner.temp }}/WazeHeaders-${{ env.WAZE_VERSION }}.tar.gz
+          name: WazeDump-${{ env.WAZE_VERSION }}
+          path: ${{ runner.temp }}/WazeDump-${{ env.WAZE_VERSION }}.tar.gz
           retention-days: 7
