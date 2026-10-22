@@ -6,13 +6,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: build-${{ github.ref }}
-  # Cancel superseded PR builds, but never cancel main (its deploy must finish).
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -41,12 +38,13 @@ jobs:
           name: WazePatch
           path: packages/*.deb
 
-      # ---- Sileo/Zebra APT repo, published to GitHub Pages (main only) ----
+      # ---- Sileo/Zebra APT repo, published to the gh-pages branch (main only) ----
       - name: Build APT repo
         if: github.ref == 'refs/heads/main'
         run: |
           mkdir -p repo/debs
           cp packages/*.deb repo/debs/
+          touch repo/.nojekyll
           cd repo
           DEB=$(ls debs/*.deb | head -n1)
           echo "Packaging $DEB"
@@ -67,19 +65,14 @@ jobs:
           echo "--- repo contents ---"
           ls -lR
 
-      - name: Upload Pages artifact
+      - name: Publish to gh-pages
         if: github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: repo
-
-  deploy:
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd repo
+          git init -q
+          git checkout -q -b gh-pages
+          git add -A
+          git -c user.email=ci@users.noreply.github.com -c user.name="waze-patch CI" commit -q -m "Publish Sileo repo"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
