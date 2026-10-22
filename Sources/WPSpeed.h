@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <CoreLocation/CoreLocation.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 // Posted on the main thread after every location update.
 FOUNDATION_EXPORT NSString *const WPSpeedDidChangeNotification;
 
@@ -19,3 +21,5 @@ FOUNDATION_EXPORT NSString *const WPSpeedDidChangeNotification;
 - (void)addConsumer:(NSString *)name;
 - (void)removeConsumer:(NSString *)name;
 @end
+
+NS_ASSUME_NONNULL_END
