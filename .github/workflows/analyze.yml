@@ -41,7 +41,24 @@ jobs:
         run: echo "::add-mask::$IPA_URL"
 
       - name: Install ipsw
-        run: brew install blacktop/tap/ipsw
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Install straight from the GitHub release to avoid Homebrew tap trust issues.
+          URL=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+              https://api.github.com/repos/blacktop/ipsw/releases/latest \
+            | python3 -c "import sys,json
+a=json.load(sys.stdin)['assets']
+def pick(p): return next((x['browser_download_url'] for x in a if p(x['name'])),'')
+print(pick(lambda n:'macOS' in n and 'universal' in n and n.endswith('.tar.gz')) or pick(lambda n:'macOS' in n and n.endswith('.tar.gz')))")
+          echo "Downloading ipsw from $URL"
+          test -n "$URL"
+          curl -fL "$URL" -o "$RUNNER_TEMP/ipsw.tar.gz"
+          mkdir -p "$RUNNER_TEMP/ipswbin"
+          tar -xzf "$RUNNER_TEMP/ipsw.tar.gz" -C "$RUNNER_TEMP/ipswbin"
+          IPSW=$(find "$RUNNER_TEMP/ipswbin" -name ipsw -type f | head -n1)
+          echo "IPSW=$IPSW" >> "$GITHUB_ENV"
+          "$IPSW" version || true
 
       - name: Download IPA
         run: |
@@ -75,11 +92,18 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/out"
           echo "Using arch: $ARCH"
-          ipsw class-dump --arch "$ARCH" --headers "$BIN" > "$RUNNER_TEMP/out/AllClasses.h" 2>"$RUNNER_TEMP/out/classdump.err" \
-            || ipsw class-dump "$BIN" > "$RUNNER_TEMP/out/AllClasses.h" 2>>"$RUNNER_TEMP/out/classdump.err" \
+          "$IPSW" class-dump --arch "$ARCH" "$BIN" > "$RUNNER_TEMP/out/AllClasses.h" 2>"$RUNNER_TEMP/out/classdump.err" \
+            || "$IPSW" class-dump "$BIN" > "$RUNNER_TEMP/out/AllClasses.h" 2>>"$RUNNER_TEMP/out/classdump.err" \
             || true
-          echo "AllClasses.h: $(wc -l < "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null || echo 0) lines"
+          LINES=$(wc -l < "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null || echo 0)
+          echo "AllClasses.h: $LINES lines"
           head -n 20 "$RUNNER_TEMP/out/classdump.err" || true
+          # Fallback: raw Objective-C metadata via otool (always available, no install).
+          if [ "$LINES" -lt 50 ]; then
+            echo "class-dump thin; falling back to otool -oV"
+            otool -oV "$BIN" > "$RUNNER_TEMP/out/objc.txt" 2>/dev/null || true
+            echo "objc.txt: $(wc -l < "$RUNNER_TEMP/out/objc.txt" 2>/dev/null || echo 0) lines"
+          fi
 
       - name: Framework list
         run: |
@@ -91,26 +115,30 @@ jobs:
 
       - name: Candidate classes
         run: |
-          echo "===== CANDIDATE CLASSES (name : superclass) ====="
-          grep -hE '^@interface ' "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null \
-            | sed -E 's/^@interface ([A-Za-z0-9_]+)[^:]*: ([A-Za-z0-9_]+).*/\1 : \2/; s/^@interface ([A-Za-z0-9_]+).*/\1/' \
-            | sort -u \
-            | grep -iE "$CLASS_REGEX" \
-            | head -n 400
+          echo "===== CANDIDATE CLASSES (name[ : superclass]) ====="
+          {
+            # From class-dump, with superclass when available.
+            grep -hE '^@interface ' "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null \
+              | sed -E 's/^@interface ([A-Za-z0-9_]+)[^:]*: ([A-Za-z0-9_]+).*/\1 : \2/; s/^@interface ([A-Za-z0-9_]+).*/\1/'
+            # Always-available fallback: Obj-C class symbols.
+            nm "$BIN" 2>/dev/null | grep -oE '_OBJC_CLASS_\$_[A-Za-z0-9_]+' | sed 's/_OBJC_CLASS_\$_//'
+          } | sort -u | grep -iE "$CLASS_REGEX" | head -n 400
           echo "===== END CANDIDATE CLASSES ====="
+
+      - name: Candidate selectors
+        run: |
+          echo "===== CANDIDATE SELECTORS (method names) ====="
+          # Method-name strings live in their own section; always available.
+          otool -v -s __TEXT __objc_methname "$BIN" 2>/dev/null \
+            | awk 'NF>=2 && $1 ~ /^[0-9a-f]+$/ {print $2}' \
+            | sort -u | grep -iE "$CLASS_REGEX" | head -n 400
+          echo "===== END SELECTORS ====="
 
       - name: Candidate config strings
         run: |
           echo "===== CANDIDATE CONFIG STRINGS ====="
           strings -a "$BIN" | sort -u | grep -iE "$STRING_REGEX" | head -n 400
           echo "===== END CONFIG STRINGS ====="
-
-      - name: Candidate toggle methods
-        run: |
-          echo "===== CANDIDATE TOGGLE METHODS ====="
-          grep -hiE '(BOOL|int|NSInteger).*(ad|advert|promot|banner|sponsor|speed|limit|camera|alert|report|theme|mood|night|dark)' "$RUNNER_TEMP/out/AllClasses.h" 2>/dev/null \
-            | sed -E 's/^[[:space:]]+//' | sort -u | head -n 250
-          echo "===== END TOGGLE METHODS ====="
 
       - name: Package headers
         run: |
