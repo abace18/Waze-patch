@@ -7,11 +7,8 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = WazePatch
 
-WazePatch_FILES = Tweak.x WPPrefs.m WPSpeedometer.m
-WazePatch_CFLAGS = -fobjc-arc
-WazePatch_FRAMEWORKS = UIKit CoreLocation CarPlay
+WazePatch_FILES = Tweak.x $(wildcard Sources/*.m)
+WazePatch_CFLAGS = -fobjc-arc -I$(THEOS_PROJECT_DIR)/Sources
+WazePatch_FRAMEWORKS = UIKit CoreLocation CarPlay AudioToolbox QuartzCore
 
 include $(THEOS_MAKE_PATH)/tweak.mk
-
-SUBPROJECTS += wazepatchprefs
-include $(THEOS_MAKE_PATH)/aggregate.mk
