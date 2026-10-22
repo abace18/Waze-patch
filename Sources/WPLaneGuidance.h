@@ -6,4 +6,6 @@
 // string-keyed booleans.
 @interface WPLaneGuidance : NSObject
 + (void)installIfEnabled;
+// Short human-readable status for the settings screen (no Console needed).
++ (NSString *)statusSummary;
 @end

@@ -1,6 +1,6 @@
 #import <Foundation/Foundation.h>
 
-#define WP_VERSION @"0.3.1"
+#define WP_VERSION @"0.3.2"
 
 typedef NS_ENUM(NSInteger, WPInstallMode) {
     WPInstallModeJailbreak, // loaded by the tweak injector from outside the app

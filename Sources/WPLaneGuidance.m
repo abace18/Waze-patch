@@ -2,6 +2,11 @@
 #import "WPPrefs.h"
 #import <objc/runtime.h>
 
+// Diagnostics shown in-app so the user doesn't need Console.
+static BOOL gInstalled;
+static NSInteger gHookedClasses;
+static NSInteger gHits; // how many lane-guidance reads we forced
+
 // The iOS config keys that gate lane guidance, as found in the 5.26 binary.
 static NSSet<NSString *> *WPLaneKeys(void) {
     static NSSet *keys;
@@ -43,7 +48,7 @@ static void WPSwizzleBoolForKey(Class cls) {
 
     __block WPBoolIMP orig = (WPBoolIMP)method_getImplementation(m);
     IMP replacement = imp_implementationWithBlock(^BOOL(id self, id key) {
-        if (WPKeyMatches(key)) return YES;
+        if (WPKeyMatches(key)) { gHits++; return YES; }
         return orig(self, sel, key);
     });
     method_setImplementation(m, replacement);
@@ -68,7 +73,15 @@ static void WPSwizzleBoolForKey(Class cls) {
         hooked++;
     }
     free(classes);
-    NSLog(@"[WazePatch] lane guidance enabled, scanned config classes: %ld", (long)hooked);
+    gInstalled = YES;
+    gHookedClasses = hooked;
+    NSLog(@"[WazePatch] lane guidance enabled, hooked config classes: %ld", (long)hooked);
+}
+
++ (NSString *)statusSummary {
+    if (!WPPrefs.shared.laneGuidance) return @"Oprit";
+    if (!gInstalled) return @"Repornește Waze";
+    return [NSString stringWithFormat:@"%ld clase · %ld citiri forțate", (long)gHookedClasses, (long)gHits];
 }
 
 @end
