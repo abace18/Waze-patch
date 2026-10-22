@@ -24,6 +24,11 @@ on:
         required: false
         type: string
         default: "^(config|feature|flag|enable|show|hide|ad_|ads_|speed|limit|camera|alert|report|theme|mood|night|dark)[a-z0-9_.]{2,}$"
+      dump_classes:
+        description: "Clase de interfațat complet (class-dump), separate prin spațiu"
+        required: false
+        type: string
+        default: "ConfigServiceObjcWrapper ConfigService ConfigFeatureManager ConfigKey ConfigValue ConfigItem EnabledFeature AlertsAndReportsSettings CameraTypesSettingsVC"
 
 concurrency:
   group: analyze-${{ github.ref }}
@@ -37,6 +42,7 @@ jobs:
       IPA_URL: ${{ inputs.ipa_url }}
       CLASS_REGEX: ${{ inputs.class_regex }}
       STRING_REGEX: ${{ inputs.string_regex }}
+      DUMP_CLASSES: ${{ inputs.dump_classes }}
     steps:
       - name: Mask IPA URL
         run: echo "::add-mask::$IPA_URL"
@@ -103,6 +109,28 @@ jobs:
           echo "===== CANDIDATE CONFIG STRINGS ====="
           grep -iE "$STRING_REGEX" "$RUNNER_TEMP/out/strings.txt" | head -n 400
           echo "===== END CONFIG STRINGS ====="
+
+      - name: Objective-C metadata
+        run: |
+          # Full Obj-C class/method metadata via otool (no external tools).
+          otool -oV "$BIN" > "$RUNNER_TEMP/out/objc.txt" 2>/dev/null || true
+          echo "objc.txt: $(wc -l < "$RUNNER_TEMP/out/objc.txt" 2>/dev/null || echo 0) lines"
+
+      - name: Dump key class methods
+        run: |
+          # Print a window after each target class header: its baseMethods block
+          # lists selector names and their type encodings, enough to write hooks.
+          for C in $DUMP_CLASSES; do
+            echo "===== CLASS $C ====="
+            awk -v c="$C" '
+              $0 ~ ("name 0x[0-9a-f]+ " c "$") {show=1}
+              show {print; n++}
+              show && n>170 {exit}
+            ' "$RUNNER_TEMP/out/objc.txt" \
+              | grep -E 'superclass|baseMethods|^[[:space:]]*name 0x|^[[:space:]]*types 0x' \
+              | head -n 160
+            echo "===== END $C ====="
+          done | tee "$RUNNER_TEMP/out/key_classes.txt"
 
       - name: Package dump
         run: tar -czf "$RUNNER_TEMP/WazeDump-$WAZE_VERSION.tar.gz" -C "$RUNNER_TEMP" out
