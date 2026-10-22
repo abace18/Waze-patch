@@ -1,5 +1,6 @@
 #import "WPSettingsViewController.h"
 #import "WPEnvironment.h"
+#import "WPLaneDiagViewController.h"
 #import "WPLaneGuidance.h"
 #import "WPPrefs.h"
 #import "WPTripsViewController.h"
@@ -148,6 +149,9 @@ static WPSection *WPMakeSection(NSString *title, NSString *footer, NSArray<WPRow
         ]),
         WPMakeSection(@"Navigație", @"Experimental: forțează flag-urile interne de lane guidance ale Waze. Se aplică după repornirea Waze. Poate să nu apară dacă Waze nu are date de benzi pe drumul respectiv.", @[
             WPSwitchRow(@"Lane guidance (forțat)", WPKeyLaneGuidance),
+            WPLinkRow(@"Diagnostic benzi", ^(WPSettingsViewController *vc) {
+                [vc.navigationController pushViewController:[WPLaneDiagViewController new] animated:YES];
+            }),
         ]),
         WPMakeSection(@"Jurnal de călătorii", @"Înregistrează local traseele (consumă GPS și baterie). Totul rămâne pe telefon.", @[
             WPSwitchRow(@"Înregistrare", WPKeyTripLog),

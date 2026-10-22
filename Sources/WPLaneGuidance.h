@@ -8,4 +8,6 @@
 + (void)installIfEnabled;
 // Short human-readable status for the settings screen (no Console needed).
 + (NSString *)statusSummary;
+// Captured lane-guidance config reads: "selector | keyClass | keyPreview".
++ (NSArray<NSString *> *)samples;
 @end
