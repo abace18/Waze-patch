@@ -1,16 +1,17 @@
 #import "WPLaneGuidance.h"
 #import "WPPrefs.h"
 #import <objc/runtime.h>
-#import <objc/message.h>
 
-// Diagnostics shown in-app so the user doesn't need Console.
+// Lightweight: only hooks boolForKey: on Waze's config classes and does a cheap
+// string check. No work on non-string keys, so it can't burn CPU on the app's
+// frequent config reads. (An earlier diagnostic observed every accessor and
+// built a description per read, which overheated the device.)
 static BOOL gInstalled;
 static BOOL gScanned;
 static NSInteger gHookedClasses;
-static NSInteger gHits;                         // lane-guidance reads seen
-static NSMutableArray<NSString *> *gSamples;    // "selector | keyClass | keyPreview"
+static NSInteger gHits;
+static NSMutableArray<NSString *> *gSamples;
 
-// The iOS config keys that gate lane guidance, as found in the 5.26 binary.
 static NSSet<NSString *> *WPLaneKeys(void) {
     static NSSet *keys;
     static dispatch_once_t once;
@@ -31,81 +32,34 @@ static NSSet<NSString *> *WPLaneKeys(void) {
     return keys;
 }
 
-static BOOL WPTextHasLane(NSString *s) {
-    if (![s isKindOfClass:NSString.class]) return NO;
-    return [s containsString:@"lane_guidance"] || [s containsString:@"continue_straight"]
-        || [s containsString:@"LANE_GUIDANCE"] || [s containsString:@"CONTINUE_STRAIGHT"];
-}
-
-// A short, cheap-ish description of a config key, string or object.
-static NSString *WPKeyPreview(id key) {
-    if ([key isKindOfClass:NSString.class]) return key;
-    NSString *cls = NSStringFromClass([key class]) ?: @"?";
-    for (NSString *g in @[@"name", @"key", @"identifier", @"stringValue"]) {
-        SEL s = NSSelectorFromString(g);
-        if ([key respondsToSelector:s]) {
-            id v = ((id (*)(id, SEL))objc_msgSend)(key, s);
-            if ([v isKindOfClass:NSString.class] && [v length]) return [NSString stringWithFormat:@"%@(%@)", cls, v];
-        }
-    }
-    return cls;
-}
-
-// Returns YES if this key is a lane-guidance key; records a sample for the UI.
-static BOOL WPRecordAndMatch(SEL sel, id key) {
-    BOOL stringMatch = [key isKindOfClass:NSString.class]
-        && ([WPLaneKeys() containsObject:key] || WPTextHasLane(key));
-    NSString *preview = nil;
-    BOOL laneRelated = stringMatch;
-    if (!laneRelated) {
-        preview = WPKeyPreview(key);
-        laneRelated = WPTextHasLane(preview);
-    }
-    if (!laneRelated) return stringMatch;
-
-    @synchronized (WPLaneGuidance.class) {
-        gHits++;
-        if (gSamples.count < 60) {
-            if (!preview) preview = WPKeyPreview(key);
-            NSString *line = [NSString stringWithFormat:@"%@ | %@ | %@",
-                NSStringFromSelector(sel), NSStringFromClass([key class]) ?: @"?", preview];
-            if (![gSamples containsObject:line]) [gSamples addObject:line];
-        }
-    }
-    return stringMatch;
+// Cheap: exact set membership, then two substring checks only if needed.
+static BOOL WPIsLaneKey(NSString *s) {
+    if ([WPLaneKeys() containsObject:s]) return YES;
+    return [s containsString:@"lane_guidance"] || [s containsString:@"continue_straight"];
 }
 
 typedef BOOL (*WPBoolIMP)(id, SEL, id);
-typedef id   (*WPIdIMP)(id, SEL, id);
 
-// Swizzles a one-object-argument accessor to observe lane-guidance reads; for
-// BOOL accessors it also forces YES on a string-key match (the actual override).
-static BOOL WPSwizzle1Obj(Class cls, SEL sel, BOOL forceBoolOnMatch) {
+static BOOL WPHookBoolForKey(Class cls) {
+    SEL sel = @selector(boolForKey:);
     Method m = class_getInstanceMethod(cls, sel);
     if (!m) return NO;
     const char *enc = method_getTypeEncoding(m);
-    if (!enc) return NO;
-    char ret = enc[0];
+    if (!enc || (enc[0] != 'c' && enc[0] != 'B')) return NO; // BOOL return only
 
-    if (ret == 'c' || ret == 'B') {
-        __block WPBoolIMP orig = (WPBoolIMP)method_getImplementation(m);
-        IMP r = imp_implementationWithBlock(^BOOL(id self, id key) {
-            BOOL match = WPRecordAndMatch(sel, key);
-            if (match && forceBoolOnMatch) return YES;
-            return orig(self, sel, key);
-        });
-        method_setImplementation(m, r);
-        return YES;
-    } else if (ret == '@') {
-        __block WPIdIMP orig = (WPIdIMP)method_getImplementation(m);
-        IMP r = imp_implementationWithBlock(^id(id self, id key) {
-            WPRecordAndMatch(sel, key);
-            return orig(self, sel, key);
-        });
-        method_setImplementation(m, r);
-        return YES;
-    }
-    return NO;
+    __block WPBoolIMP orig = (WPBoolIMP)method_getImplementation(m);
+    IMP r = imp_implementationWithBlock(^BOOL(id self, id key) {
+        if ([key isKindOfClass:NSString.class] && WPIsLaneKey(key)) {
+            @synchronized (WPLaneGuidance.class) {
+                gHits++;
+                if (gSamples.count < 40 && ![gSamples containsObject:key]) [gSamples addObject:key];
+            }
+            return YES; // force lane-guidance flags on
+        }
+        return orig(self, sel, key);
+    });
+    method_setImplementation(m, r);
+    return YES;
 }
 
 @implementation WPLaneGuidance
@@ -115,13 +69,6 @@ static BOOL WPSwizzle1Obj(Class cls, SEL sel, BOOL forceBoolOnMatch) {
     if (!WPPrefs.shared.laneGuidance) return;
     if (!gSamples) gSamples = [NSMutableArray array];
 
-    SEL accessors[] = {
-        @selector(boolForKey:),
-        @selector(configValueForKey:),
-        @selector(cachedValueForConfigFlag:),
-        @selector(configValueFor:),
-    };
-
     unsigned int count = 0;
     Class *classes = objc_copyClassList(&count);
     NSInteger hooked = 0;
@@ -130,23 +77,15 @@ static BOOL WPSwizzle1Obj(Class cls, SEL sel, BOOL forceBoolOnMatch) {
         if (!name) continue;
         NSString *n = @(name);
         if (![n containsString:@"ConfigService"] && ![n containsString:@"ConfigFeatureManager"]) continue;
-        BOOL any = NO;
-        for (size_t k = 0; k < sizeof(accessors) / sizeof(accessors[0]); k++) {
-            BOOL forceBool = (accessors[k] == @selector(boolForKey:));
-            if (WPSwizzle1Obj(classes[i], accessors[k], forceBool)) any = YES;
-        }
-        if (any) hooked++;
+        if (WPHookBoolForKey(classes[i])) hooked++;
     }
     free(classes);
     gHookedClasses = hooked;
     gScanned = YES;
-    // Config classes register during launch; if none were found yet, stay
-    // uninstalled so a later call (didFinishLaunching / retry) can hook them.
     if (hooked > 0) gInstalled = YES;
-    NSLog(@"[WazePatch] lane guidance scan, hooked config classes: %ld (installed=%d)", (long)hooked, gInstalled);
+    NSLog(@"[WazePatch] lane guidance, hooked config classes: %ld (installed=%d)", (long)hooked, gInstalled);
 }
 
-// Retry a few times after launch, in case the config classes register late.
 + (void)installWithRetries {
     [self installIfEnabled];
     if (gInstalled || !WPPrefs.shared.laneGuidance) return;
