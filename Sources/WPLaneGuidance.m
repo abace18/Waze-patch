@@ -5,6 +5,7 @@
 
 // Diagnostics shown in-app so the user doesn't need Console.
 static BOOL gInstalled;
+static BOOL gScanned;
 static NSInteger gHookedClasses;
 static NSInteger gHits;                         // lane-guidance reads seen
 static NSMutableArray<NSString *> *gSamples;    // "selector | keyClass | keyPreview"
@@ -112,7 +113,7 @@ static BOOL WPSwizzle1Obj(Class cls, SEL sel, BOOL forceBoolOnMatch) {
 + (void)installIfEnabled {
     if (gInstalled) return;
     if (!WPPrefs.shared.laneGuidance) return;
-    gSamples = [NSMutableArray array];
+    if (!gSamples) gSamples = [NSMutableArray array];
 
     SEL accessors[] = {
         @selector(boolForKey:),
@@ -137,14 +138,28 @@ static BOOL WPSwizzle1Obj(Class cls, SEL sel, BOOL forceBoolOnMatch) {
         if (any) hooked++;
     }
     free(classes);
-    gInstalled = YES;
     gHookedClasses = hooked;
-    NSLog(@"[WazePatch] lane guidance diagnostic installed, hooked config classes: %ld", (long)hooked);
+    gScanned = YES;
+    // Config classes register during launch; if none were found yet, stay
+    // uninstalled so a later call (didFinishLaunching / retry) can hook them.
+    if (hooked > 0) gInstalled = YES;
+    NSLog(@"[WazePatch] lane guidance scan, hooked config classes: %ld (installed=%d)", (long)hooked, gInstalled);
+}
+
+// Retry a few times after launch, in case the config classes register late.
++ (void)installWithRetries {
+    [self installIfEnabled];
+    if (gInstalled || !WPPrefs.shared.laneGuidance) return;
+    static int attempts = 0;
+    if (attempts++ >= 10) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self installWithRetries];
+    });
 }
 
 + (NSString *)statusSummary {
     if (!WPPrefs.shared.laneGuidance) return @"Oprit";
-    if (!gInstalled) return @"Repornește Waze";
+    if (!gScanned) return @"Repornește Waze";
     return [NSString stringWithFormat:@"%ld clase · %ld citiri", (long)gHookedClasses, (long)gHits];
 }
 

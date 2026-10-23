@@ -262,8 +262,6 @@ static void WPApplyBackgroundAlive(void) {
         %init;
         if (prefs.highRefresh) %init(HighRefresh);
 
-        // Install as early as possible so config reads at launch are caught too.
-        [WPLaneGuidance installIfEnabled];
 
         NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
         NSOperationQueue *main = NSOperationQueue.mainQueue;
@@ -282,7 +280,7 @@ static void WPApplyBackgroundAlive(void) {
         [center addObserverForName:UIApplicationDidFinishLaunchingNotification object:nil queue:main usingBlock:^(NSNotification *note) {
             WPApplyBackgroundAlive();
             [WPTripLog.shared applyPrefs];
-            [WPLaneGuidance installIfEnabled];
+            [WPLaneGuidance installWithRetries];
         }];
         [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:main usingBlock:^(NSNotification *note) {
             WPApplyKeepAwake();

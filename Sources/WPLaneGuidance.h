@@ -6,6 +6,9 @@
 // string-keyed booleans.
 @interface WPLaneGuidance : NSObject
 + (void)installIfEnabled;
+// Like installIfEnabled, but retries for a few seconds while Waze's config
+// classes finish registering during launch.
++ (void)installWithRetries;
 // Short human-readable status for the settings screen (no Console needed).
 + (NSString *)statusSummary;
 // Captured lane-guidance config reads: "selector | keyClass | keyPreview".
