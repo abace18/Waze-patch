@@ -1,0 +1,15 @@
+Package: com.abace.wazepatch
+Name: WazePatch
+Version: 0.3.5
+Architecture: iphoneos-arm64
+Description: Îmbunătățiri pentru Waze pe telefon și CarPlay.
+Maintainer: abace18
+Author: abace18
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 15.0)
+Filename: ./debs/com.abace.wazepatch_0.3.5_iphoneos-arm64.deb
+Size: 43524
+MD5sum: 182eef627a277da01b503b0b6d5b5e00
+SHA1: d5d40e27c6df41a1b95d581c118ce22aa12b9703
+SHA256: c6646fd85712465655cda1078eee3b47d64878cefb34cdc83beb96ffe38c1433
+
